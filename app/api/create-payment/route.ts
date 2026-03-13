@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Order } from '@/lib/types'
 
 export async function POST(req: NextRequest) {
   const { orderItems, total, customerName } = await req.json()
@@ -9,7 +10,7 @@ export async function POST(req: NextRequest) {
   // ------------------------------------------------------------------
 
   // Store order in memory (replace with DB later)
-  const order = {
+  const order: Order = {
     orderId,
     customerName: customerName || 'Customer',
     orderItems,
@@ -33,5 +34,5 @@ export async function POST(req: NextRequest) {
 
 // TypeScript fix for global
 declare global {
-  var orders: any[]
+  var orders: Order[]
 }

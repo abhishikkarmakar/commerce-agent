@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useState, useEffect } from 'react'
 
 interface Order {
@@ -23,10 +24,10 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    fetchOrders()
+    const timer = setTimeout(() => { fetchOrders() }, 0)
     // Auto refresh every 5 seconds - live updates!
     const interval = setInterval(fetchOrders, 5000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(timer); clearInterval(interval) }
   }, [])
 
   return (
@@ -39,9 +40,9 @@ export default function Dashboard() {
           <p className="text-gray-500 mt-1">Live order tracking — Powered by Pine Labs</p>
         </div>
         <div className="flex gap-3">
-          <a href="/" className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700">
+          <Link href="/" className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700">
             💬 Open Chat
-          </a>
+          </Link>
           <button onClick={fetchOrders} className="bg-white border px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
             🔄 Refresh
           </button>
@@ -80,9 +81,9 @@ export default function Dashboard() {
             <p className="text-4xl mb-3">🛒</p>
             <p className="font-medium">No orders yet</p>
             <p className="text-sm mt-1">Orders will appear here instantly when customers chat</p>
-            <a href="/" className="mt-4 inline-block text-green-600 underline text-sm">
+            <Link href="/" className="mt-4 inline-block text-green-600 underline text-sm">
               Try placing an order →
-            </a>
+            </Link>
           </div>
         ) : (
           <div className="divide-y">
