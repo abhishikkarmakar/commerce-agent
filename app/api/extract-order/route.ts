@@ -4,10 +4,11 @@ import { products, Product } from '@/lib/products'
 type OrderItem = Product & { quantity: number; subtotal: number }
 
 export async function POST(req: NextRequest) {
-  const { message } = await req.json()
+  const { message, products: customProducts } = await req.json()
+  const activeProducts = customProducts || products
 
   // ---- MOCK AI (replace with AWS Bedrock on Friday) ----
-  const orderItems = extractOrderMock(message)
+  const orderItems = extractOrderMock(message, activeProducts)
   // ------------------------------------------------------
 
   if (orderItems.length === 0) {
@@ -32,11 +33,12 @@ export async function POST(req: NextRequest) {
 }
 
 // Mock order extractor - works without any API key!
-function extractOrderMock(message: string): OrderItem[] {
+// Mock order extractor - works without any API key!
+function extractOrderMock(message: string, productList: Product[]): OrderItem[] {
   const lowerMsg = message.toLowerCase()
   const foundItems: OrderItem[] = []
 
-  products.forEach(product => {
+  productList.forEach(product => {
     const productName = product.name.toLowerCase()
     
     // Match patterns like "2 burgers", "two pizzas", "a coke", "1 coffee"

@@ -12,7 +12,7 @@ export default function ChatPage() {
     {
       role: 'agent',
       content: '👋 Hi! Welcome to QuickShop. What would you like to order today?',
-      timestamp: new Date().toLocaleTimeString().toLowerCase()
+      timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
     }
   ])
   const [input, setInput] = useState('')
@@ -24,7 +24,7 @@ export default function ChatPage() {
     const userMessage: Message = {
       role: 'customer',
       content: input,
-      timestamp: new Date().toLocaleTimeString().toLowerCase()
+      timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
     }
     
     setMessages(prev => [...prev, userMessage])
@@ -35,14 +35,17 @@ export default function ChatPage() {
     const extractRes = await fetch('/api/extract-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: input })
+      body: JSON.stringify({ 
+        message: input,
+        products: JSON.parse(localStorage.getItem('merchant_products') || 'null')
+      })
     })
     const extractData = await extractRes.json()
 
     const orderReply: Message = {
       role: 'agent',
       content: extractData.reply,
-      timestamp: new Date().toLocaleTimeString().toLowerCase()
+      timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
     }
     setMessages(prev => [...prev, orderReply])
 
@@ -61,7 +64,7 @@ export default function ChatPage() {
       const payReply: Message = {
         role: 'agent',
         content: payData.reply,
-        timestamp: new Date().toLocaleTimeString().toLowerCase()
+        timestamp: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
       }
       setMessages(prev => [...prev, payReply])
     }
