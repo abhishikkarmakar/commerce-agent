@@ -42,7 +42,8 @@ export async function POST(req: NextRequest) {
 
     if (!orderId) {
       console.warn('⚠️ No order_id in webhook')
-      return NextResponse.json({ success: true }) // Always 200
+      // Redirect back to chat if no order ID
+      return NextResponse.redirect(new URL('/', req.url))
     }
 
     const orderStatus = ['COMPLETED', 'SUCCESS', 'CHARGED'].includes(status?.toUpperCase())
@@ -61,10 +62,16 @@ export async function POST(req: NextRequest) {
       .eq('order_id', orderId)
 
     console.log(`✅ Order ${orderId} → ${orderStatus}`)
-    return NextResponse.json({ success: true })
+
+    // Redirect user to payment status page
+    const statusUrl = new URL('/payment-status', req.url)
+    statusUrl.searchParams.set('orderId', orderId)
+    statusUrl.searchParams.set('status', orderStatus)
+    return NextResponse.redirect(statusUrl)
 
   } catch (e) {
     console.error('❌ Webhook error:', e)
-    return NextResponse.json({ success: true }, { status: 200 })
+    // Redirect back to chat on error
+    return NextResponse.redirect(new URL('/', req.url))
   }
 }

@@ -131,6 +131,15 @@ async function checkInventory(
   return data.current_price_paisa as number
 }
 
+// ── Step 5b: Check for ambiguous category (e.g. "pizza" matches multiple) ──
+function findAmbiguousMatches(rawName: string, allProducts: Product[]): Product[] {
+  const lower = rawName.toLowerCase()
+  return allProducts.filter(p =>
+    p.name.toLowerCase().includes(lower) ||
+    lower.includes(p.name.toLowerCase().split(' ')[0])
+  )
+}
+
 // ── Step 5: Pairing recommendation ───────────────────────────────────────────
 async function getPairingRecommendation(
   orderedNames: string[],
@@ -248,12 +257,44 @@ export async function POST(req: NextRequest) {
     }
 
     if (!parsedItems.length) {
+      // Check if it's an ambiguous category like "pizza" or "burger"
+      const lowerMsg = message.toLowerCase().trim()
+      const categoryMatches = allProducts.filter(p =>
+        p.name.toLowerCase().includes(lowerMsg) ||
+        lowerMsg.includes(p.name.toLowerCase().split(' ')[0])
+      )
+
+      if (categoryMatches.length > 1) {
+        const options = categoryMatches
+          .map((p, i) => `${i + 1}. ${p.emoji} ${p.name} — ₹${toRupees(p.base_price_paisa)}`)
+          .join('\n')
+        return NextResponse.json({
+          success: false,
+          ambiguous: true,
+          category: lowerMsg,
+          matches: categoryMatches,
+          reply: `🤔 We have ${categoryMatches.length} types of ${lowerMsg}!\n\n${options}\n\nWhich one would you like? Just reply with the number or name! 😊`
+        })
+      }
+
       const menuDisplay = allProducts
         .map(p => `${p.emoji} ${p.name} — ₹${toRupees(p.base_price_paisa)}`)
         .join('\n')
+
+      // Check if user is asking about the menu
+      const menuKeywords = [
+        'what you have', 'what do you have', 'what\'s available', 'whats available',
+        'show menu', 'show me menu', 'menu', 'what can i order', 'what can i get',
+        'what are the options', 'options', 'available', 'list', 'items',
+        'what all', 'tell me', 'show me', 'what you got', 'whatcha got'
+      ]
+      const isMenuRequest = menuKeywords.some(k => lowerMsg.includes(k))
+
       return NextResponse.json({
         success: false,
-        reply: `Hmm, I didn't quite catch that! 👂\n\n✨ Here's what we've got:\n\n${menuDisplay}\n\nFeel free to order any combo! Example: "1 cheese burger, 2 fries, 1 coke" 🤤`
+        reply: isMenuRequest
+          ? `Sure! Here's what we have 😋\n\n${menuDisplay}\n\nJust tell me what you'd like! Example: "2 classic burgers and 1 coke" 🛍️`
+          : `Hmm, I didn't quite catch that! 👂\n\n✨ Here's what we've got:\n\n${menuDisplay}\n\nFeel free to order any combo! Example: "1 cheese burger, 2 fries, 1 coke" 🤤`
       })
     }
 
