@@ -23,14 +23,29 @@ export default function ProductsPage(): JSX.Element {
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
-    const stored = localStorage.getItem('merchant_products')
-    setProducts(stored ? JSON.parse(stored) : DEFAULT_PRODUCTS)
+    async function load() {
+      try {
+        const res = await fetch('/api/products')
+        const data = await res.json()
+        setProducts(data?.products || DEFAULT_PRODUCTS)
+      } catch (e) {
+        const stored = localStorage.getItem('merchant_products')
+        setProducts(stored ? JSON.parse(stored) : DEFAULT_PRODUCTS)
+      }
+    }
+    load()
   }, [])
 
-  const saveProducts = (updated: Product[]) => {
-    localStorage.setItem('merchant_products', JSON.stringify(updated))
+  const saveProducts = async (updated: Product[]) => {
     setProducts(updated)
     setSaved(true)
+    try {
+      await fetch('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ products: updated }) })
+      localStorage.setItem('merchant_products', JSON.stringify(updated))
+    } catch (e) {
+      console.warn('Failed to save to API, saved locally', e)
+      localStorage.setItem('merchant_products', JSON.stringify(updated))
+    }
     setTimeout(() => setSaved(false), 2000)
   }
 

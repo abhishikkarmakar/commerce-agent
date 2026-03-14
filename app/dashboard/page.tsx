@@ -3,13 +3,12 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 
 interface Order {
-  orderId: string
-  customerName: string
-  orderItems: { name: string; quantity: number; subtotal: number; emoji: string }[]
+  id: string
+  customer_id: string
+  customer_name: string
   total: number
-  paymentLink: string
-  status: 'PENDING' | 'PAID' | 'FAILED'
-  createdAt: string
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED'
+  created_at: string
 }
 
 export default function Dashboard() {
@@ -88,30 +87,28 @@ export default function Dashboard() {
         ) : (
           <div className="divide-y">
             {orders.map(order => (
-              <div key={order.orderId} className="p-4 hover:bg-gray-50">
+              <div key={order.id} className="p-4 hover:bg-gray-50">
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs text-gray-400">{order.orderId}</span>
+                      <span className="font-mono text-xs text-gray-400">{order.id.slice(0, 8)}</span>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        order.status === 'PAID' 
+                        order.status === 'COMPLETED' 
                           ? 'bg-green-100 text-green-700' 
-                          : order.status === 'FAILED'
+                          : order.status === 'CANCELLED'
                           ? 'bg-red-100 text-red-700'
                           : 'bg-yellow-100 text-yellow-700'
                       }`}>
-                        {order.status === 'PAID' ? '✅ Paid' : order.status === 'FAILED' ? '❌ Failed' : '⏳ Pending'}
+                        {order.status === 'COMPLETED' ? '✅ Completed' : order.status === 'CANCELLED' ? '❌ Cancelled' : '⏳ Pending'}
                       </span>
                     </div>
-                    <p className="font-medium text-gray-800 mt-1">{order.customerName}</p>
-                    <p className="text-sm text-gray-500 mt-0.5">
-                      {order.orderItems.map(i => `${i.emoji} ${i.quantity}x ${i.name}`).join(' · ')}
-                    </p>
+                    <p className="font-medium text-gray-800 mt-1">{order.customer_name}</p>
+                    <p className="text-sm text-gray-500 mt-0.5">Order ID: {order.id}</p>
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-gray-800">₹{order.total}</p>
                     <p className="text-xs text-gray-400 mt-1">
-                      {new Date(order.createdAt).toLocaleTimeString()}
+                      {new Date(order.created_at).toLocaleTimeString()}
                     </p>
                   </div>
                 </div>
