@@ -1,10 +1,34 @@
 import { NextResponse } from 'next/server'
-import { OpenAI } from 'openai'
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime"
 import { Pinecone } from '@pinecone-database/pinecone'
 import { createClient } from '@supabase/supabase-js'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
+const bedrock = new BedrockRuntimeClient({
+  region: process.env.AWS_REGION || "us-east-1",
+  // If using bearer token, provide dummy credentials to avoid loading error
+  credentials: process.env.AWS_BEARER_TOKEN_BEDROCK
+    ? { accessKeyId: 'dummy', secretAccessKey: 'dummy' }
+    : undefined
+})
+
+// ── Bearer Token Middleware ──────────────────────────────────────────────────
+if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
+  bedrock.middlewareStack.add(
+    (next) => (args: any) => {
+      args.request.headers["Authorization"] = `Bearer ${process.env.AWS_BEARER_TOKEN_BEDROCK}`;
+      return next(args);
+    },
+    {
+      step: "build",
+      name: "addBearerToken",
+    }
+  );
+}
+
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! })
+const EMBED_MODEL = "amazon.titan-embed-text-v2:0"
+const EMBED_DIMS = 1024
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -23,18 +47,30 @@ export async function POST() {
 
     const index = pinecone.index(process.env.PINECONE_INDEX_NAME ?? 'products')
 
-    // Create embeddings for all products
+    // Create embeddings for all products via Bedrock
     const vectors = await Promise.all(
       products.map(async (p) => {
         const text = `${p.name} ${p.emoji} food item priced at ${p.base_price_paisa / 100} rupees`
-        const res = await openai.embeddings.create({
-          model: 'text-embedding-3-large',
-          input: [text],
-          dimensions: 1024,
-        })
+
+        const body = JSON.stringify({
+          inputText: text,
+          dimensions: EMBED_DIMS,
+          normalize: true
+        });
+
+        const command = new InvokeModelCommand({
+          modelId: EMBED_MODEL,
+          contentType: "application/json",
+          accept: "application/json",
+          body: body
+        });
+
+        const response = await bedrock.send(command);
+        const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+
         return {
           id: p.id,
-          values: res.data[0].embedding,
+          values: responseBody.embedding,
           metadata: {
             name: p.name,
             base_price_paisa: p.base_price_paisa,

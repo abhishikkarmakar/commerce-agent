@@ -1,11 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { OpenAI } from 'openai'
+import {
+  BedrockRuntimeClient,
+  ConverseCommand,
+  InvokeModelCommand
+} from "@aws-sdk/client-bedrock-runtime"
 import { Pinecone } from '@pinecone-database/pinecone'
 import { createClient } from '@supabase/supabase-js'
 import { products as defaultProducts, Product, toRupees } from '@/lib/products'
 
 // ── Clients ──────────────────────────────────────────────────────────────────
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! })
+// AWS uses environment credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION)
+// or a Bearer Token if provided via AWS_BEARER_TOKEN_BEDROCK
+const bedrock = new BedrockRuntimeClient({
+  region: process.env.AWS_REGION || "us-east-1",
+  // If using bearer token, provide dummy credentials to avoid loading error
+  credentials: process.env.AWS_BEARER_TOKEN_BEDROCK
+    ? { accessKeyId: 'dummy', secretAccessKey: 'dummy' }
+    : undefined
+})
+
+// ── Bearer Token Middleware ──────────────────────────────────────────────────
+if (process.env.AWS_BEARER_TOKEN_BEDROCK) {
+  bedrock.middlewareStack.add(
+    (next) => (args: any) => {
+      args.request.headers["Authorization"] = `Bearer ${process.env.AWS_BEARER_TOKEN_BEDROCK}`;
+      return next(args);
+    },
+    {
+      step: "build",
+      name: "addBearerToken",
+    }
+  );
+}
+
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY! })
 
 function getSupabaseAdmin() {
@@ -20,8 +47,8 @@ function getSupabaseAdmin() {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const CHAT_MODEL = 'gpt-4o-mini'
-const EMBED_MODEL = 'text-embedding-3-large'
+const CHAT_MODEL = "anthropic.claude-3-haiku-20240307-v1:0"
+const EMBED_MODEL = "amazon.titan-embed-text-v2:0"
 const EMBED_DIMS = 1024
 const SIMILARITY_THRESHOLD = 0.50
 const TOP_K = 3
@@ -56,44 +83,58 @@ interface PineconeMatch {
 
 // ── Step 1: Extract items via GPT with json_object format ─────────────────────
 async function extractItems(message: string): Promise<ParsedItem[]> {
-  const resp = await openai.chat.completions.create({
-    model: CHAT_MODEL,
-    max_tokens: 512,
-    temperature: 0,
-    response_format: { type: 'json_object' },
+  const command = new ConverseCommand({
+    modelId: CHAT_MODEL,
     messages: [
       {
-        role: 'system',
-        content: `You extract order items from a customer message.
+        role: "user",
+        content: [{
+          text: `You extract order items from a customer message.
 Return ONLY a JSON object: {"items": [{"raw_name": string, "quantity": number}]}
 Rules:
 - quantity >= 1, default to 1 if not mentioned
 - normalise: "a"/"an"/"one"=1, "two"=2, "three"=3, "four"=4, "five"=5
 - strip filler: "please", "want", "give me", "I'd like"
 - if nothing looks like an order return {"items": []}
-Example: "2 cheese burgers and a coke" → {"items":[{"raw_name":"cheese burger","quantity":2},{"raw_name":"coke","quantity":1}]}`
+Example: "2 cheese burgers and a coke" → {"items":[{"raw_name":"cheese burger","quantity":2},{"raw_name":"coke","quantity":1}]}` }]
       },
-      { role: 'user', content: message }
-    ]
-  })
+      { role: 'user', content: [{ text: message }] }
+    ],
+    inferenceConfig: { maxTokens: 512, temperature: 0 }
+  });
 
-  const text = resp.choices[0]?.message?.content ?? '{"items":[]}'
   try {
-    const parsed = JSON.parse(text)
-    return Array.isArray(parsed.items) ? parsed.items : []
-  } catch {
-    return []
+    const response = await bedrock.send(command);
+    const text = response.output?.message?.content?.[0]?.text ?? '{"items":[]}';
+
+    // Basic cleanup in case Claude adds markdown blocks
+    const cleanJson = text.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(cleanJson);
+    return Array.isArray(parsed.items) ? parsed.items : [];
+  } catch (err) {
+    console.error('❌ Bedrock extraction failed:', err);
+    return [];
   }
 }
 
 // ── Step 2: Embed text ────────────────────────────────────────────────────────
 async function embed(text: string): Promise<number[]> {
-  const res = await openai.embeddings.create({
-    model: EMBED_MODEL,
-    input: [text],
+  const body = JSON.stringify({
+    inputText: text,
     dimensions: EMBED_DIMS,
-  })
-  return res.data[0].embedding
+    normalize: true
+  });
+
+  const command = new InvokeModelCommand({
+    modelId: EMBED_MODEL,
+    contentType: "application/json",
+    accept: "application/json",
+    body: body
+  });
+
+  const response = await bedrock.send(command);
+  const responseBody = JSON.parse(new TextDecoder().decode(response.body));
+  return responseBody.embedding;
 }
 
 // ── Step 3: Search Pinecone ───────────────────────────────────────────────────
@@ -153,17 +194,18 @@ async function getPairingRecommendation(
 
   if (!otherItems) return ''
 
+  const command = new ConverseCommand({
+    modelId: CHAT_MODEL,
+    messages: [{
+      role: "user",
+      content: [{ text: `Customer ordered: ${orderedNames.join(', ')}. Other available: ${otherItems}. Suggest 1 pairing in 1 friendly sentence. Return empty string if no good pairing.` }]
+    }],
+    inferenceConfig: { maxTokens: 100, temperature: 0.7 }
+  });
+
   try {
-    const resp = await openai.chat.completions.create({
-      model: CHAT_MODEL,
-      max_tokens: 60,
-      temperature: 0.7,
-      messages: [{
-        role: 'user',
-        content: `Customer ordered: ${orderedNames.join(', ')}. Other available: ${otherItems}. Suggest 1 pairing in 1 friendly sentence. Return empty string if no good pairing.`
-      }]
-    })
-    return resp.choices[0]?.message?.content?.trim() ?? ''
+    const resp = await bedrock.send(command);
+    return resp.output?.message?.content?.[0]?.text?.trim() ?? ''
   } catch {
     return ''
   }

@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.redirect(new URL('/', req.url))
     }
 
-    const orderStatus = ['COMPLETED', 'SUCCESS', 'CHARGED'].includes(status?.toUpperCase())
+    const orderStatus = ['COMPLETED', 'SUCCESS', 'CHARGED', 'PROCESSED'].includes(status?.toUpperCase())
       ? 'SUCCESS' : 'FAILED'
 
     // Update order status in Supabase
